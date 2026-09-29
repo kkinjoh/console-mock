@@ -1,0 +1,1662 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>みまもり クレーム管理（モック）</title>
+<style>
+:root { color-scheme: light; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 14px 20px 40px;
+  background: #fff;
+  color: #222;
+  font: 14px/1.6 "Hiragino Sans", "Yu Gothic UI", "Noto Sans JP", system-ui, sans-serif;
+}
+.page { max-width: 1240px; margin: 0 auto; }
+
+h1 { font-size: 16px; font-weight: 600; margin: 0; white-space: nowrap; }
+p { margin: 0 0 10px; color: #555; font-size: 13px; }
+
+/* ---------- 見出し行 ---------- */
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 6px; }
+.mocknote { font-size: 11.5px; color: #9b2c2c; white-space: nowrap; }
+
+/* ---------- タブ(横並び、既定) ---------- */
+.tabs { display: flex; flex-wrap: wrap; gap: 18px; border-bottom: 1px solid #ddd; margin-bottom: 12px; }
+.tabs button {
+  all: unset; cursor: pointer;
+  padding: 5px 0; margin-bottom: -1px;
+  color: #666; font-size: 13px; border-bottom: 2px solid transparent;
+}
+.tabs button:hover { color: #222; }
+.tabs button[aria-current="true"] { color: #222; font-weight: 600; border-bottom-color: #222; }
+.tabs button .n { color: #999; font-size: 13px; margin-left: 4px; }
+
+/* ---------- タブ(縦並び) ---------- */
+.page.vertical {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  grid-template-areas: "head head" "nav view";
+  column-gap: 28px;
+}
+.page.vertical .head { grid-area: head; }
+.page.vertical #view { grid-area: view; min-width: 0; }
+.page.vertical .tabs {
+  grid-area: nav; flex-direction: column; flex-wrap: nowrap; gap: 1px;
+  border-bottom: none; border-right: 1px solid #ddd; margin-bottom: 0; padding-right: 14px;
+  align-self: start; position: sticky; top: 10px;
+}
+.page.vertical .tabs button {
+  padding: 5px 8px; margin-bottom: 0; border-bottom: none;
+  border-right: 2px solid transparent; border-radius: 3px 0 0 3px;
+}
+.page.vertical .tabs button[aria-current="true"] { background: #f3f3f3; border-right-color: #222; }
+.page.vertical .tabs button .n { float: right; margin-left: 8px; }
+
+/* ---------- データ読み込み ---------- */
+.source {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px;
+  flex: 1; min-width: 240px; font-size: 12px; color: #666;
+}
+.source .grow { flex: 1; min-width: 140px; }
+.source.drag { background: #f7f9fc; }
+button.btn {
+  all: unset; cursor: pointer; color: #1a5fb4; font-size: 12px; text-decoration: underline;
+}
+button.btn:hover { color: #0d3d7a; }
+
+/* ---------- 検索・絞り込み ---------- */
+.toolbar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-bottom: 8px; }
+input[type="search"] {
+  width: 200px; padding: 3px 8px; font: inherit; font-size: 13px;
+  border: 1px solid #ccc; border-radius: 4px; background: #fff; color: #222;
+}
+input[type="search"]:focus { outline: none; border-color: #888; }
+select[data-org], select[data-delegatee] {
+  padding: 3px 6px; font: inherit; font-size: 13px;
+  border: 1px solid #ccc; border-radius: 4px; background: #fff; color: #222;
+  margin-bottom: 8px;
+}
+.chips { display: flex; flex-wrap: wrap; gap: 14px; }
+.chip {
+  all: unset; cursor: pointer; font-size: 13px; color: #666;
+  border-bottom: 1px solid transparent;
+}
+.chip:hover { color: #222; }
+.chip[aria-pressed="true"] { color: #222; font-weight: 600; border-bottom-color: #222; }
+
+/* ---------- 表 ---------- */
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; line-height: 1.45; }
+th, td { text-align: left; padding: 3px 14px 3px 0; border-bottom: 1px solid #f0f0f0; white-space: nowrap; vertical-align: top; }
+/* 縦に長い表でも列名を見失わないよう、見出しは画面上部に貼り付ける。 */
+th {
+  position: sticky; top: 0; z-index: 1; background: #fff;
+  font-size: 12px; color: #666; font-weight: 400;
+  padding-top: 5px; padding-bottom: 5px; box-shadow: inset 0 -1px 0 #ccc;
+  border-bottom: 0;
+}
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: #222; }
+th[aria-sort="ascending"], th[aria-sort="descending"] { color: #222; font-weight: 600; }
+.sortmark { display: inline-block; width: 12px; font-size: 9px; }
+tbody tr[data-row-id]:hover td { background: #f7f7f7; }
+tbody tr[data-row-id] { cursor: pointer; }
+tbody tr.sel td { background: #eaf1fb; }
+tbody tr.sel:hover td { background: #e2ecfa; }
+/* 選択した行の直後に差し込む詳細。全列にまたがる1行として置く。 */
+td.detailcell { padding: 0; white-space: normal; background: #fafafa; border-bottom: 1px solid #ddd; }
+td.detailcell > .inner { padding: 14px 0 18px 16px; border-left: 3px solid #222; max-width: 1080px; }
+td.wrap { white-space: normal; min-width: 180px; }
+td.num, th.num { font-variant-numeric: tabular-nums; }
+.muted { color: #aaa; }
+tr.ended td { color: #999; }
+.state-waiting { color: #a15c00; }
+.empty { padding: 24px 0; color: #999; font-size: 13px; }
+.count { font-size: 12px; color: #999; margin-left: auto; }
+.id { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #888; }
+.pair { color: #888; padding: 0 6px; }
+.hint { font-size: 12px; color: #999; margin: 14px 0 0; }
+
+/* ---------- 詳細パネル ---------- */
+.detail .dhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+/* 新規作成フォームは、対応する行が無いので表の上(作成ボタンの位置)に出す。 */
+.detail.above {
+  margin: 0 0 16px; padding: 14px 0 16px 16px;
+  border-left: 3px solid #222; background: #fafafa;
+}
+/* 絞り込みで選択行が表に出ていないときは表の下に出す。 */
+.detail.below { margin-top: 18px; border-top: 2px solid #222; padding-top: 14px; }
+.detail .dhead h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.detail .dhead .sub { font-size: 12px; color: #888; }
+.detail section { margin-bottom: 16px; }
+.detail section > h3 { font-size: 11px; color: #888; font-weight: 600; letter-spacing: .04em; margin: 0 0 6px; }
+
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px 22px; }
+.fields .f { min-width: 0; }
+.fields .f > span { display: block; font-size: 11px; color: #888; }
+.fields .f > div { font-size: 13px; overflow-wrap: anywhere; }
+
+.related { font-size: 13px; }
+.related a { color: #1a5fb4; }
+.related .row { padding: 2px 0; border-bottom: 1px solid #f2f2f2; }
+.related .row:last-child { border-bottom: 0; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px; }
+button.primary, button.ghost, button.danger {
+  all: unset; cursor: pointer; font-size: 13px; padding: 5px 15px; border-radius: 4px;
+}
+button.primary { background: #222; color: #fff; }
+button.primary:hover { background: #000; }
+button.ghost { border: 1px solid #ccc; color: #222; }
+button.ghost:hover { border-color: #888; }
+button.danger { border: 1px solid #dcc0c0; color: #9b2c2c; }
+button.danger:hover { border-color: #9b2c2c; }
+.newbtn { margin-bottom: 12px; }
+
+/* ---------- 入力フォーム ---------- */
+.form { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 22px; }
+.form .fld { min-width: 0; }
+.form .fld.wide { grid-column: 1 / -1; }
+.form label { display: block; font-size: 11px; color: #666; margin-bottom: 2px; }
+label.req::after { content: " *"; color: #9b2c2c; }
+.form input, .form select, .form textarea {
+  width: 100%; font: inherit; font-size: 13px; padding: 4px 7px;
+  border: 1px solid #ccc; border-radius: 4px; background: #fff; color: #222;
+}
+.form textarea { min-height: 52px; resize: vertical; }
+.form input:focus, .form select:focus, .form textarea:focus { outline: none; border-color: #888; }
+
+.savemode { display: flex; flex-wrap: wrap; gap: 10px; margin: 16px 0 12px; }
+.savemode button {
+  all: unset; cursor: pointer; border: 1px solid #ddd; border-radius: 5px;
+  padding: 8px 12px; max-width: 360px;
+}
+.savemode button:hover { border-color: #aaa; }
+.savemode button[aria-pressed="true"] { border-color: #222; background: #f5f5f5; }
+.savemode button[disabled] { opacity: .4; cursor: not-allowed; }
+.savemode strong { display: block; font-size: 13px; font-weight: 600; }
+.savemode span { display: block; font-size: 11.5px; color: #777; line-height: 1.5; margin-top: 2px; }
+.formerr { color: #9b2c2c; font-size: 12.5px; margin-top: 8px; }
+.formerr.wide { width: 100%; margin: 4px 0 0; }
+.notice { color: #1a5fb4; font-size: 12.5px; margin: 0 0 10px; }
+
+/* ---------- 操作説明 ---------- */
+.help { max-width: 720px; }
+.help section { margin-bottom: 26px; }
+.help h2 {
+  font-size: 15px; font-weight: 600; margin: 0 0 10px;
+  padding-bottom: 5px; border-bottom: 1px solid #ddd;
+}
+.help p { margin: 0 0 8px; color: #444; line-height: 1.75; }
+.help p.warn { color: #9b2c2c; }
+.help ul { margin: 0 0 8px; padding-left: 1.3em; font-size: 13px; color: #444; line-height: 1.75; }
+.help li { margin-bottom: 2px; }
+.help dl { margin: 0 0 10px; font-size: 13px; }
+.help dt { font-weight: 600; margin-top: 10px; }
+.help dt:first-child { margin-top: 0; }
+.help dd { margin: 2px 0 0; padding-left: 1.3em; color: #555; line-height: 1.75; }
+.help code {
+  font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+  background: #f3f3f3; padding: 1px 4px; border-radius: 3px;
+}
+
+/* ---------- 団体・渡し先(共有マスタ)の追加 ---------- */
+button.linkbtn { all: unset; cursor: pointer; color: #1a5fb4; font-size: 12px; text-decoration: underline; }
+button.linkbtn:hover { color: #0d3d7a; }
+.addlink { margin-top: 4px; }
+.addbox {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-top: 6px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; background: #fff;
+}
+.form .addbox input { width: 128px; }
+.masterform {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+  margin-bottom: 14px; padding: 12px 14px; border: 1px solid #ddd; border-radius: 5px;
+}
+.masterform label { display: block; font-size: 11px; color: #666; margin-bottom: 2px; }
+.masterform input {
+  width: 200px; font: inherit; font-size: 13px; padding: 4px 7px;
+  border: 1px solid #ccc; border-radius: 4px; background: #fff; color: #222;
+}
+.masterform input:focus { outline: none; border-color: #888; }
+</style>
+</head>
+<body>
+<div class="page" id="page">
+  <div class="head">
+    <h1>みまもり クレーム管理</h1>
+    <span class="mocknote">モック（編集は画面上だけ・ファイルには保存されません）</span>
+    <div class="source" id="source">
+      <span class="grow" id="sourceText">読み込み中…</span>
+      <button class="btn" id="pickDir">フォルダを選ぶ</button>
+      <button class="btn" id="pick">CSVを選ぶ</button>
+      <button class="btn" id="reload">./output を読む</button>
+      <button class="btn" id="useSample">サンプルに戻す</button>
+      <button class="btn" id="layout">縦に並べる</button>
+      <input type="file" id="file" multiple accept=".csv" hidden>
+      <input type="file" id="dir" webkitdirectory directory multiple hidden>
+    </div>
+  </div>
+
+  <div class="tabs" id="nav"></div>
+  <div id="view"></div>
+</div>
+
+<script id="sample" type="application/json">{"ORGANIZATION": "id,name\n1,さくら見守りの会\n2,みどり地域包括\n3,あおば福祉会\n", "DELEGATEE": "id,name,type\n1,山田 太郎,\n2,鈴木 花子,\n3,佐藤 建設,\n4,高橋 一郎,\n", "DEVICE": "device_no,mac_address,antenna,status,note\nD-001,AA:BB:CC:00:00:01,内蔵,,\nD-002,AA:BB:CC:00:00:02,外付,,\nD-003,AA:BB:CC:00:00:03,内蔵,,\nD-004,AA:BB:CC:00:00:04,外付,,\nD-005,AA:BB:CC:00:00:05,外付,,\nD-006,AA:BB:CC:00:00:06,内蔵,,\nD-007,AA:BB:CC:00:00:07,内蔵,,\nD-008,AA:BB:CC:00:00:08,内蔵,,\nD-009,AA:BB:CC:00:00:09,外付,,\nD-010,AA:BB:CC:00:00:10,外付,,\n", "TAG": "tag_no,mac_address,tag_type,status,note\nT-001,11:22:33:00:00:01,キーホルダー,,\nT-002,11:22:33:00:00:02,カード,,\nT-003,11:22:33:00:00:03,キーホルダー,,\nT-004,11:22:33:00:00:04,靴貼付,,\nT-005,11:22:33:00:00:05,カード,,\nT-006,11:22:33:00:00:06,カード,,\nT-007,11:22:33:00:00:07,キーホルダー,,\nT-008,11:22:33:00:00:08,カード,,\nT-009,11:22:33:00:00:09,キーホルダー,,\nT-010,11:22:33:00:00:10,カード,,\nT-011,11:22:33:00:00:11,カード,,\nT-012,11:22:33:00:00:12,キーホルダー,,\n", "DEVICE_CLAIM": "id,org_id,delegatee_id,name,name_org,install_date,is_installed,device_no,installation_type,purpose,location,address,start_date,end_date,note\nd4c1241b-9152-4514-9f73-ca3f85efb583,1,1,玄関子機,たろうさん宅,,true,D-001,,,玄関,東京都港区芝1-2-3,,,電波良好\nabe9c13f-a517-458c-978b-e038888f00c6,1,2,居間子機,はなこさん宅,,true,D-002,,,居間,東京都港区芝4-5-6,2024-02-01,2024-06-30,転居により終了\na2a14b83-1bb7-4fdb-b726-23b8b9d4e976,1,2,勝手口子機,はなこさん宅,,false,D-003,,,勝手口,東京都港区芝4-5-6,,,設置工事待ち\n55c5061c-9761-41d1-b63c-c34897456b67,2,3,受付子機,受付カウンター,,true,D-004,,,1階受付,大阪市北区梅田7-8-9,,,\n845fef95-99bd-49a4-b181-af12d42a6520,2,3,通用口子機,通用口,,true,D-005,,,1階通用口,大阪市北区梅田7-8-9,,,\n4dc54bae-b1ff-4958-ba81-aada7d4cd88b,2,,ホール子機,ホール,,true,D-006,,,2階ホール,大阪市北区梅田7-8-9,,,アンテナ交換済\n3f81643c-bf63-42ce-bbe2-34463ed2d96c,3,4,正門子機,正門,,true,D-009,,,正門脇,札幌市中央区南1-10,,,\n72c54498-69a4-4cca-b05e-3e6877438991,3,4,裏門子機,裏門,,false,D-010,,,裏門脇,札幌市中央区南1-10,,,積雪で保留\ne4c8a858-6e8a-412b-8506-16f9613dac20,3,4,新規宅子機,いちろうさん宅,,false,,,,玄関,札幌市中央区南1-10,2024-07-01,,子機の入荷待ち\n3bbf1640-c402-4c09-a484-fd6816599c28,1,2,居間子機,はなこさん新居,,true,D-002,,,居間,東京都港区芝浦2-1-1,2024-07-01,,転居に伴い新規作成\n", "TAG_CLAIM": "id,org_id,name,user_name,handout_date,is_handed,tag_no,purpose,start_date,end_date,note\n314cf1ca-78df-472a-af8c-95ae6c946849,1,たろうタグ,山田 太郎,2024-01-05,true,T-001,外出見守り,,,本人携帯\n41168b66-c81a-4525-b705-6bfa94b086ae,1,たろう予備,山田 太郎,2024-01-05,true,T-002,外出見守り,,,家族保管\nd2757a04-4fac-4bf7-bb92-2c64f740ef09,1,はなこタグ,鈴木 花子,2024-02-13,true,T-003,徘徊対策,,,\na33f2dac-531b-44dc-8db8-72904cb9310a,1,はなこ靴タグ,鈴木 花子,2024-03-01,true,T-004,徘徊対策,,,\n9a8601b1-142d-4330-8c17-4825e97229d0,2,受付来訪者A,田中 次郎,2024-04-10,true,T-005,来訪者管理,,,\ne1bd94e2-d542-448b-b50e-5fc61efe092a,2,受付来訪者B,伊藤 三郎,2024-04-10,true,T-006,来訪者管理,,,\na2a3644c-08f2-4077-8253-bd52f0476165,2,職員タグ,渡辺 四郎,2024-04-10,true,T-007,職員動線,,,夜勤担当\n1163611b-9975-453e-a2c1-599e08a38485,2,ホール利用者,小林 五郎,2024-05-20,true,T-008,通所管理,,,\n45082926-4c1f-4a2e-8a2f-c59a764e691b,3,いちろうタグ,高橋 一郎,2024-06-01,true,T-009,外出見守り,,,\n39a30b55-2def-4056-83c3-34e1c7ee8dda,3,予備タグ,,,false,T-010,外出見守り,,,未配布\n3774ccce-18b6-4ff6-99b8-a3b6845f9111,3,新規利用者タグ,中村 六郎,,false,,外出見守り,2024-07-01,,タグの入荷待ち\n", "CLAIM_PAIR": "id,device_claim_id,tag_claim_id\n3e46016c-81cd-45af-9d69-cc5b0bff88cf,d4c1241b-9152-4514-9f73-ca3f85efb583,314cf1ca-78df-472a-af8c-95ae6c946849\n1f2b2283-3069-4779-b920-e8bda0962a08,d4c1241b-9152-4514-9f73-ca3f85efb583,41168b66-c81a-4525-b705-6bfa94b086ae\n7b7d4efa-63f7-4f4b-84ac-aa8d15eb5a8e,abe9c13f-a517-458c-978b-e038888f00c6,d2757a04-4fac-4bf7-bb92-2c64f740ef09\nee5d6c9e-299f-4fb9-af1a-a5c9e313ab41,a2a14b83-1bb7-4fdb-b726-23b8b9d4e976,a33f2dac-531b-44dc-8db8-72904cb9310a\na2701f18-c3f7-49f3-9e77-cbe187f6d28c,55c5061c-9761-41d1-b63c-c34897456b67,9a8601b1-142d-4330-8c17-4825e97229d0\n9be218d3-1c5a-445e-af06-e4149fee9ccd,55c5061c-9761-41d1-b63c-c34897456b67,e1bd94e2-d542-448b-b50e-5fc61efe092a\n6656c39c-4384-4571-8870-d54c2eb75dbd,845fef95-99bd-49a4-b181-af12d42a6520,a2a3644c-08f2-4077-8253-bd52f0476165\n9bec2d73-aad5-408e-b68d-b8b964cd8da7,4dc54bae-b1ff-4958-ba81-aada7d4cd88b,1163611b-9975-453e-a2c1-599e08a38485\ne6c068a7-e244-4375-b590-eb68cd489c3c,3f81643c-bf63-42ce-bbe2-34463ed2d96c,45082926-4c1f-4a2e-8a2f-c59a764e691b\n92653a4b-e176-4d18-8987-75a3722a4847,e4c8a858-6e8a-412b-8506-16f9613dac20,3774ccce-18b6-4ff6-99b8-a3b6845f9111\n", "RECONCILE": "mac_address,state,in_aws,in_azure,in_ledger,ledger_device_no,ledger_status,ledger_note,aws_name,aws_dev_eui,azure_id,azure_name,azure_rssi,azure_lastreceivetime,azure_lat,azure_lon,azure_type\nAA:BB:CC:00:00:02,ledger_only,false,false,true,D-002,,,,,,,,,,,\nAA:BB:CC:00:00:04,ledger_only,false,false,true,D-004,,,,,,,,,,,\nAA:BB:CC:00:00:05,ledger_only,false,false,true,D-005,,,,,,,,,,,\nAA:BB:CC:00:00:06,ledger_only,false,false,true,D-006,,,,,,,,,,,\nAA:BB:CC:00:00:07,ledger_only,false,false,true,D-007,,,,,,,,,,,\nAA:BB:CC:00:00:08,ledger_only,false,false,true,D-008,,,,,,,,,,,\nAA:BB:CC:00:00:F1,aws_only,true,false,false,,,,テスト機,FF01AABBCC0000F1,,,,,,,\nAA:BB:CC:00:00:F3,azure_only,false,true,false,,,,,,150,旧ページ登録機,-90,2024-08-30 09:10:45,,,\nAA:BB:CC:00:00:10,aws_ledger,true,false,true,D-010,,,裏門受信機,FF01AABBCC000010,,,,,,,\nAA:BB:CC:00:00:03,azure_ledger,false,true,true,D-003,,,,,3,勝手口受信機,-58,2024-09-21 06:40:00,35.6580,139.7514,1\nAA:BB:CC:00:00:F2,aws_azure,true,true,false,,,,倉庫予備機,FF01AABBCC0000F2,99,倉庫予備機,-80,2024-09-18 14:55:02,,,\nAA:BB:CC:00:00:01,all,true,true,true,D-001,,,玄関受信機,FF01AABBCC000001,1,玄関受信機,-62,2024-09-20 08:12:00,35.6580,139.7514,1\nAA:BB:CC:00:00:09,all,true,true,true,D-009,,,正門受信機,FF01AABBCC000009,9,正門受信機,-70,2024-09-19 22:03:11,43.0642,141.3469,2\n"}</script>
+<script>
+"use strict";
+
+/* ------------------------------------------------------------ CSV 読み込み */
+
+/** RFC 4180 の CSV を、ヘッダーとレコード配列に分けて読む。 */
+function parseCsvTable(text) {
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  const rows = []; let row = [], cell = "", q = false, quoted = false;
+  const endCell = () => { row.push(cell); cell = ""; quoted = false; };
+  const endRow = () => { endCell(); rows.push(row); row = []; };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+      continue;
+    }
+    if (c === '"' && cell === "" && !quoted) { q = true; quoted = true; }
+    else if (c === ",") endCell();
+    else if (c === "\r") { if (text[i + 1] === "\n") i++; endRow(); }
+    else if (c === "\n") endRow();
+    else cell += c;
+  }
+  if (cell !== "" || quoted || row.length) endRow();
+  const clean = rows.filter(r => !(r.length === 1 && r[0] === ""));
+  const header = (clean.shift() || []).map(h => h.trim());
+  return {
+    header,
+    rows: clean.map(cells => Object.fromEntries(header.map((h, i) => [h, (cells[i] ?? "").trim()]))),
+  };
+}
+
+/** レコード配列だけが要るとき用。 */
+function parseCsv(text) {
+  return parseCsvTable(text).rows;
+}
+
+const TABLES = ["ORGANIZATION", "DELEGATEE", "DEVICE", "TAG", "DEVICE_CLAIM", "TAG_CLAIM", "CLAIM_PAIR"];
+
+const CLAIM_TABLE = { dclaim: "DEVICE_CLAIM", tclaim: "TAG_CLAIM" };
+
+/**
+ * 各テーブルの列。空の行を作るときと、取り込んだCSVが本当にそのテーブルかを確かめるのに使う。
+ * ディレクトリをまるごと選ぶと legacy や brand-new の同名ファイルも混ざるので、
+ * ファイル名だけでなく列でも判断する。
+ */
+const TABLE_COLUMNS = {
+  ORGANIZATION: ["id", "name"],
+  DELEGATEE: ["id", "name", "type"],
+  DEVICE: ["device_no", "mac_address", "antenna", "status", "note"],
+  TAG: ["tag_no", "mac_address", "tag_type", "status", "note"],
+  DEVICE_CLAIM: ["id", "org_id", "delegatee_id", "name", "name_org", "install_date", "is_installed",
+                 "device_no", "installation_type", "purpose", "location", "address",
+                 "start_date", "end_date", "note"],
+  TAG_CLAIM: ["id", "org_id", "name", "user_name", "handout_date", "is_handed", "tag_no",
+              "purpose", "start_date", "end_date", "note"],
+  CLAIM_PAIR: ["id", "device_claim_id", "tag_claim_id"],
+  DEVICE_RECONCILE: ["mac_address", "state", "in_aws", "in_azure", "in_ledger"],
+};
+
+/* ------------------------------------------------------------ 状態 */
+
+/** 読み込んだCSVテーブル。編集はここに反映する(モックなのでファイルには書かない)。 */
+let raw = null;
+/** 画面用に組み立てたモデル。raw から毎回作り直す。 */
+let db = null;
+/** クレームビューごとの選択中の行(クレームid)。 */
+const selected = { dclaim: null, tclaim: null };
+/** 編集中のフォーム。{ view, mode, id, draft, save } */
+let editor = null;
+/** 次の描画で選択行を画面内へスクロールするか(新規作成は表の末尾に増えるため)。 */
+let scrollToSelected = false;
+/** 詳細パネルに1回だけ出すお知らせ。描画したら消える。 */
+let notice = "";
+/** 団体・渡し先の追加フォーム(マスタのタブで開くもの)。{ kind, values, error } */
+let masterEditor = null;
+
+/**
+ * 追加できる共有マスタ。団体と渡し先は複数のクレームから参照される実体なので、
+ * クレーム側の自由記述(name / name_org)とは別に、ここで1件ずつ足す。
+ */
+const MASTER = {
+  org: {
+    table: "ORGANIZATION", label: "団体",
+    fields: [{ key: "name", label: "団体名", required: true }],
+  },
+  del: {
+    table: "DELEGATEE", label: "渡し先",
+    fields: [{ key: "name", label: "名前", required: true }, { key: "type", label: "種別" }],
+  },
+};
+
+/** 連番の id を採番する(移行スクリプトと同じく、マスタは連番)。 */
+function nextMasterId(table) {
+  const used = new Set(raw[table].map(r => r.id));
+  let n = raw[table].reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
+  while (used.has(String(n))) n++;
+  return String(n);
+}
+
+/**
+ * マスタを1件足す。成功したら新しい id、失敗したらエラー文言を返す。
+ * 名前の重複は弾く(同じ実体が二重にできると、まとめて見られなくなるため)。
+ */
+function addMaster(kind, values) {
+  const spec = MASTER[kind];
+  const name = (values.name || "").trim();
+  if (!name) return { error: `${spec.fields[0].label}は必須です。` };
+  if (raw[spec.table].some(r => (r.name || "").trim() === name)) {
+    return { error: `「${name}」はすでにあります。` };
+  }
+  const row = Object.fromEntries(TABLE_COLUMNS[spec.table].map(c => [c, ""]));
+  row.id = nextMasterId(spec.table);
+  for (const f of spec.fields) row[f.key] = (values[f.key] || "").trim();
+  raw[spec.table].push(row);
+  return { id: row.id };
+}
+
+function today() {
+  const d = new Date();
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, "0"), String(d.getDate()).padStart(2, "0")].join("-");
+}
+function uuid() {
+  try { if (crypto && crypto.randomUUID) return crypto.randomUUID(); } catch {}
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
+/* ------------------------------------------------------------ モデル組み立て */
+
+/**
+ * 生テーブルから画面用のモデルを作る。
+ * 論理設計どおり、モノ(DEVICE/TAG)は要求(CLAIM)を知らない。
+ * 両者を突き合わせるのはここが初めて。
+ */
+function build(raw) {
+  const orgName = new Map(raw.ORGANIZATION.map(o => [o.id, o.name]));
+  const delName = new Map(raw.DELEGATEE.map(d => [d.id, d.name]));
+  const isActive = c => c.end_date === "";
+
+  const deviceClaims = raw.DEVICE_CLAIM.map(c => ({
+    ...c, kind: "dclaim",
+    org: orgName.get(c.org_id) || "", delegatee: delName.get(c.delegatee_id) || "",
+    active: isActive(c), hasThing: c.device_no !== "",
+  }));
+  const tagClaims = raw.TAG_CLAIM.map(c => ({
+    ...c, kind: "tclaim",
+    org: orgName.get(c.org_id) || "",
+    active: isActive(c), hasThing: c.tag_no !== "",
+  }));
+
+  const indexBy = (claims, key) => {
+    const m = new Map();
+    for (const c of claims) {
+      if (!c[key]) continue;
+      if (!m.has(c[key])) m.set(c[key], []);
+      m.get(c[key]).push(c);
+    }
+    return m;
+  };
+  const withClaims = (things, key, map) => things.map(t => {
+    const claims = (map.get(t[key]) || []).slice()
+      .sort((a, b) => (b.start_date || "").localeCompare(a.start_date || ""));
+    return { ...t, claims, current: claims.find(c => c.active) || null };
+  });
+
+  const devices = withClaims(raw.DEVICE, "device_no", indexBy(deviceClaims, "device_no"));
+  const tags = withClaims(raw.TAG, "tag_no", indexBy(tagClaims, "tag_no"));
+
+  const dcById = new Map(deviceClaims.map(c => [c.id, c]));
+  const tcById = new Map(tagClaims.map(c => [c.id, c]));
+  const pairs = raw.CLAIM_PAIR
+    .map(p => ({ ...p, device: dcById.get(p.device_claim_id), tag: tcById.get(p.tag_claim_id) }))
+    .filter(p => p.device && p.tag);
+
+  const orgs = raw.ORGANIZATION.map(o => ({
+    ...o,
+    deviceClaims: deviceClaims.filter(c => c.org_id === o.id && c.active),
+    tagClaims: tagClaims.filter(c => c.org_id === o.id && c.active),
+  }));
+
+  // 渡し先はタグクレームには無く、子機クレームだけが参照する。
+  const delegatees = raw.DELEGATEE.map(x => ({
+    ...x,
+    deviceClaims: deviceClaims.filter(c => c.delegatee_id === x.id && c.active),
+  }));
+
+  return { raw, orgs, delegatees, devices, tags, deviceClaims, tagClaims, pairs, dcById, tcById };
+}
+
+/** raw を編集したあとに呼ぶ。モデルを組み直して再描画する。 */
+function refresh() {
+  db = build(raw);
+  render();
+}
+
+/* ------------------------------------------------------------ 描画ヘルパ */
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const dash = s => (s === "" || s == null) ? '<span class="muted">—</span>' : esc(s);
+const bool = v => v === "true" ? "はい" : v === "false" ? "いいえ" : '<span class="muted">未設定</span>';
+
+/** 列の並べ替えに使う素の値。列に sort が無ければ、描画結果からタグを外して使う。 */
+function sortValue(col, r) {
+  if (col.sort) return String(col.sort(r) ?? "");
+  return String(col.get(r)).replace(/<[^>]*>/g, "").replace(/—/g, "").trim();
+}
+
+/**
+ * 1列で並べ替える。
+ * 数字同士は数値として、それ以外は日本語の並び順で比べる。
+ * 空欄は昇順・降順のどちらでも最後にまとめる(探しているものが埋もれないように)。
+ */
+function sortRows(rows, col, dir) {
+  return rows.slice().sort((x, y) => {
+    const a = sortValue(col, x), b = sortValue(col, y);
+    if (a === b) return 0;
+    if (a === "") return 1;
+    if (b === "") return -1;
+    const na = Number(a), nb = Number(b);
+    const c = (!Number.isNaN(na) && !Number.isNaN(nb)) ? na - nb : a.localeCompare(b, "ja");
+    return dir === "desc" ? -c : c;
+  });
+}
+
+/**
+ * 表を描く。opts で行の付加情報を渡す。
+ *   rowClass … 行に付けるクラス
+ *   rowId    … 行に data-row-id を付ける(クリックで選択できるようになる)
+ *   rowAfter … その行の直後に差し込む HTML(選択行の詳細パネルなど)。空文字なら差し込まない
+ *   sortKey  … 列見出しで並べ替えられるようにする。並べ替えの状態はこのキーで覚える
+ */
+function table(columns, rows, opts) {
+  if (!rows.length) return `<div class="empty">該当する行がありません</div>`;
+  const { rowClass, rowId, rowAfter, sortKey } = opts || {};
+
+  const s = sortKey ? stateFor(sortKey) : null;
+  if (s && s.sort != null && columns[s.sort]) rows = sortRows(rows, columns[s.sort], s.dir);
+
+  const head = columns.map((c, i) => {
+    if (!sortKey) return `<th class="${c.cls || ""}">${esc(c.label)}</th>`;
+    const on = s.sort === i;
+    const aria = on ? (s.dir === "desc" ? "descending" : "ascending") : "none";
+    const mark = on ? (s.dir === "desc" ? "▼" : "▲") : "";
+    return `<th class="${c.cls || ""} sortable" data-sort="${sortKey}" data-col="${i}" aria-sort="${aria}">`
+      + `${esc(c.label)}<span class="sortmark">${mark}</span></th>`;
+  }).join("");
+
+  const body = rows.map(r => {
+    const id = rowId ? ` data-row-id="${esc(rowId(r))}"` : "";
+    let out = `<tr class="${rowClass ? rowClass(r) : ""}"${id}>` +
+      columns.map(c => `<td class="${c.cls || ""}">${c.get(r)}</td>`).join("") + "</tr>";
+    const after = rowAfter ? rowAfter(r) : "";
+    if (after) {
+      out += `<tr class="detailrow"><td class="detailcell" colspan="${columns.length}">` +
+             `<div class="inner">${after}</div></td></tr>`;
+    }
+    return out;
+  }).join("");
+  return `<div class="tablewrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+}
+
+/* 検索語とフィルタはビューごとに保持する。 */
+const uiState = {};
+/** クレームタブは既定で有効なものだけを出す(終了した行は履歴なので普段は要らない)。 */
+const DEFAULT_FILTER = { dclaim: "active", tclaim: "active" };
+function stateFor(key) {
+  // sort は列番号(未指定なら null)、dir は "asc" / "desc"。
+  return uiState[key] || (uiState[key] = { q: "", f: DEFAULT_FILTER[key] || "all", sort: null, dir: "asc" });
+}
+function applyFilters(key, rows, text, filters) {
+  const s = stateFor(key);
+  let out = rows;
+  const f = filters.find(x => x.key === s.f);
+  if (f && f.test) out = out.filter(f.test);
+  if (s.q) {
+    const q = s.q.toLowerCase();
+    out = out.filter(r => text(r).toLowerCase().includes(q));
+  }
+  return out;
+}
+function toolbar(key, filters, shown, total) {
+  const s = stateFor(key);
+  const chips = filters.length ? `<div class="chips">${filters.map(f =>
+    `<button class="chip" data-f="${key}" data-fk="${f.key}" aria-pressed="${s.f === f.key}">${esc(f.label)}</button>`
+  ).join("")}</div>` : "";
+  return `<div class="toolbar">
+    <input type="search" placeholder="検索" value="${esc(s.q)}" data-q="${key}">
+    ${chips}
+    <span class="count">${shown === total ? `${total} 件` : `${shown} / ${total} 件`}</span>
+  </div>`;
+}
+
+/* ------------------------------------------------------------ 在庫ビュー */
+
+const NO_FILTERS = [];
+
+function renderDevices(d) {
+  const rows = applyFilters("device", d.devices,
+    x => [x.device_no, x.mac_address, x.antenna, x.status, x.note].join(" "),
+    NO_FILTERS);
+  return `${toolbar("device", NO_FILTERS, rows.length, d.devices.length)}
+  ${table([
+    { label: "子機番号", get: r => esc(r.device_no) },
+    { label: "MACアドレス", get: r => `<span class="id">${esc(r.mac_address)}</span>` },
+    { label: "アンテナ", get: r => dash(r.antenna) },
+    { label: "状態", get: r => dash(r.status) },
+    { label: "備考", cls: "wrap", get: r => dash(r.note) },
+  ], rows, { sortKey: "device" })}`;
+}
+
+function renderTags(d) {
+  const rows = applyFilters("tag", d.tags,
+    x => [x.tag_no, x.mac_address, x.tag_type, x.status, x.note].join(" "),
+    NO_FILTERS);
+  return `${toolbar("tag", NO_FILTERS, rows.length, d.tags.length)}
+  ${table([
+    { label: "タグ番号", get: r => esc(r.tag_no) },
+    { label: "MACアドレス", get: r => `<span class="id">${esc(r.mac_address)}</span>` },
+    { label: "種類", get: r => dash(r.tag_type) },
+    { label: "状態", get: r => dash(r.status) },
+    { label: "備考", cls: "wrap", get: r => dash(r.note) },
+  ], rows, { sortKey: "tag" })}`;
+}
+
+/* ------------------------------------------------------------ クレームの項目定義 */
+
+/**
+ * クレームの編集項目。一覧の下の詳細表示と入力フォームが同じ定義を使う。
+ * start_date / end_date は「保存方法」で決まるので、訂正のときだけ編集できる。
+ */
+const CLAIM_FIELDS = {
+  dclaim: [
+    { key: "org_id", label: "団体", type: "select", options: d => d.orgs, master: "org", required: true, list: true },
+    { key: "delegatee_id", label: "渡し先", type: "select", options: d => d.delegatees, master: "del", list: true },
+    { key: "name", label: "名称", type: "text", list: true },
+    { key: "name_org", label: "団体別名前", type: "text", list: true },
+    { key: "device_no", label: "子機番号", type: "thing", list: true },
+    { key: "is_installed", label: "設置済", type: "bool", list: true },
+    { key: "install_date", label: "設置日", type: "date" },
+    { key: "installation_type", label: "設置タイプ", type: "text" },
+    { key: "purpose", label: "用途", type: "text" },
+    { key: "location", label: "設置場所", type: "text", list: true },
+    { key: "address", label: "住所", type: "text", wide: true },
+    { key: "note", label: "備考", type: "textarea", wide: true, list: true },
+  ],
+  tclaim: [
+    { key: "org_id", label: "管理団体", type: "select", options: d => d.orgs, master: "org", required: true, list: true },
+    { key: "name", label: "タグ名称", type: "text", list: true },
+    { key: "user_name", label: "氏名", type: "text", list: true },
+    { key: "purpose", label: "用途", type: "text", list: true },
+    { key: "tag_no", label: "タグ番号", type: "thing", list: true },
+    { key: "handout_date", label: "渡し日", type: "date", list: true },
+    { key: "is_handed", label: "渡済", type: "bool", list: true },
+    { key: "note", label: "備考", type: "textarea", wide: true, list: true },
+  ],
+};
+const THING_KEY = { dclaim: "device_no", tclaim: "tag_no" };
+const THING_LABEL = { dclaim: "子機", tclaim: "タグ" };
+
+/** その番号を選べる在庫(未割当のもの + いま自分が使っているもの)。 */
+function availableThings(view, currentNo) {
+  const key = THING_KEY[view];
+  const list = view === "dclaim" ? db.devices : db.tags;
+  return list.filter(t => !t.current || t[key] === currentNo);
+}
+
+function fieldDisplay(f, claim, d) {
+  const v = claim[f.key] ?? "";
+  if (f.type === "select") {
+    const opt = f.options(d).find(o => o.id === v);
+    return opt ? esc(opt.name) : dash(v);
+  }
+  if (f.type === "bool") return bool(v);
+  if (f.type === "thing") return v ? esc(v) : '<span class="state-waiting">未割当（現物待ち）</span>';
+  return dash(v);
+}
+
+/** クレーム入力フォームの中に出す、その場でマスタを足す小さな欄。 */
+function renderInlineMasterAdd(kind) {
+  const spec = MASTER[kind];
+  const v = editor.addValues || {};
+  return `<div class="addbox">
+    ${spec.fields.map(f =>
+      `<input type="text" data-mfield="${f.key}" value="${esc(v[f.key] || "")}"
+        placeholder="${esc(f.label)}${f.required ? " *" : ""}">`).join("")}
+    <button class="ghost" data-act="add-master-save" data-kind="${kind}">追加</button>
+    <button class="linkbtn" data-act="add-master-cancel">やめる</button>
+    ${editor.addError ? `<p class="formerr wide">${esc(editor.addError)}</p>` : ""}
+  </div>`;
+}
+
+function fieldInput(view, f, draft, d) {
+  const v = draft[f.key] ?? "";
+  const at = `data-field="${f.key}"`;
+  if (f.type === "select") {
+    const opts = f.options(d).map(o =>
+      `<option value="${esc(o.id)}"${o.id === v ? " selected" : ""}>${esc(o.name)}</option>`).join("");
+    const select = `<select ${at}><option value="">（未選択）</option>${opts}</select>`;
+    if (!f.master) return select;
+    // マスタに無い団体/渡し先が要るときに、入力中の内容を捨てずにその場で足せるようにする。
+    if (editor.addMaster === f.master) return select + renderInlineMasterAdd(f.master);
+    return select + `<div class="addlink">` +
+      `<button class="linkbtn" data-act="add-master" data-kind="${f.master}">＋ ${esc(MASTER[f.master].label)}を追加</button></div>`;
+  }
+  if (f.type === "bool") {
+    const o = (val, label) => `<option value="${val}"${v === val ? " selected" : ""}>${label}</option>`;
+    return `<select ${at}>${o("", "（未設定）")}${o("true", "はい")}${o("false", "いいえ")}</select>`;
+  }
+  if (f.type === "thing") {
+    const key = THING_KEY[view];
+    const opts = availableThings(view, editor && editor.originalThingNo).map(t =>
+      `<option value="${esc(t[key])}"${t[key] === v ? " selected" : ""}>${esc(t[key])}　${esc(t.mac_address)}</option>`).join("");
+    return `<select ${at}><option value="">（現物待ち・未割当）</option>${opts}</select>`;
+  }
+  if (f.type === "date") return `<input type="date" ${at} value="${esc(v)}">`;
+  if (f.type === "textarea") return `<textarea ${at}>${esc(v)}</textarea>`;
+  return `<input type="text" ${at} value="${esc(v)}">`;
+}
+
+/* ------------------------------------------------------------ クレーム一覧 */
+
+const CLAIM_FILTERS = [
+  { key: "all", label: "すべて", test: null },
+  { key: "active", label: "有効", test: c => c.active },
+  { key: "waiting", label: "現物待ち", test: c => c.active && !c.hasThing },
+  { key: "ended", label: "終了（履歴）", test: c => !c.active },
+];
+const claimState = c => !c.active ? '<span class="muted">終了</span>'
+  : c.hasThing ? "有効" : '<span class="state-waiting">現物待ち</span>';
+const thingNo = no => no ? esc(no) : '<span class="state-waiting">未割当</span>';
+
+/**
+ * 一覧の列。`list: true` を付けた項目だけを並べる。
+ * 詳細パネルは逆に `list` の無い項目だけを出すので、同じ情報が二度出ない。
+ */
+function listColumns(view, d) {
+  return CLAIM_FIELDS[view].filter(f => f.list).map(f => ({
+    label: f.label,
+    cls: f.wide ? "wrap" : "",
+    get: f.type === "thing" ? (r => thingNo(r[f.key])) : (r => fieldDisplay(f, r, d)),
+    // 並べ替えは見えている文字で行う(団体などは id ではなく名前で並ぶ)。
+    sort: r => fieldPlain(f, r, d),
+  }));
+}
+
+/** 画面に出ている値を、装飾の無い素の文字列で返す(並べ替え用)。 */
+function fieldPlain(f, claim, d) {
+  const v = claim[f.key] ?? "";
+  if (f.type === "select") {
+    const opt = f.options(d).find(o => o.id === v);
+    return opt ? opt.name : v;
+  }
+  if (f.type === "bool") return v === "true" ? "はい" : v === "false" ? "いいえ" : "";
+  return v;
+}
+
+/** クレーム系ビュー共通のプルダウン。選んだ値は state[field] (id) に入れる。 */
+function pickSelect(key, field, options, allLabel) {
+  const val = stateFor(key)[field] || "";
+  const opts = options.map(o => `<option value="${esc(o.id)}" ${o.id === val ? "selected" : ""}>${esc(o.name)}</option>`).join("");
+  return `<select data-${field}="${key}"><option value="">${allLabel}</option>${opts}</select>`;
+}
+function byField(key, field, idField, rows) {
+  const val = stateFor(key)[field];
+  return val ? rows.filter(r => r[idField] === val) : rows;
+}
+
+const claimRowClass = key => r => (r.active ? "" : "ended") + (selected[key] === r.id ? " sel" : "");
+
+function renderDeviceClaims(d) {
+  const scoped = byField("dclaim", "delegatee", "delegatee_id", byField("dclaim", "org", "org_id", d.deviceClaims));
+  const rows = applyFilters("dclaim", scoped,
+    c => [c.org, c.delegatee, c.name, c.name_org, c.location, c.address, c.device_no, c.note].join(" "),
+    CLAIM_FILTERS);
+  return `${isCreating("dclaim") ? "" : `<div class="newbtn"><button class="primary" data-act="new">＋ 子機クレームを作成</button></div>`}
+  ${renderCreateForm("dclaim", d)}
+  ${pickSelect("dclaim", "org", d.orgs, "すべての団体")}
+  ${pickSelect("dclaim", "delegatee", d.delegatees, "すべての渡し先")}
+  ${toolbar("dclaim", CLAIM_FILTERS, rows.length, scoped.length)}
+  ${table(listColumns("dclaim", d), rows,
+    { rowClass: claimRowClass("dclaim"), rowId: r => r.id, rowAfter: rowAfter("dclaim", d), sortKey: "dclaim" })}
+  ${renderBelowTable("dclaim", d, rows)}`;
+}
+
+function renderTagClaims(d) {
+  const scoped = byField("tclaim", "org", "org_id", d.tagClaims);
+  const rows = applyFilters("tclaim", scoped,
+    c => [c.org, c.name, c.user_name, c.purpose, c.tag_no, c.note].join(" "),
+    CLAIM_FILTERS);
+  return `${isCreating("tclaim") ? "" : `<div class="newbtn"><button class="primary" data-act="new">＋ タグクレームを作成</button></div>`}
+  ${renderCreateForm("tclaim", d)}
+  ${pickSelect("tclaim", "org", d.orgs, "すべての団体")}
+  ${toolbar("tclaim", CLAIM_FILTERS, rows.length, scoped.length)}
+  ${table(listColumns("tclaim", d), rows,
+    { rowClass: claimRowClass("tclaim"), rowId: r => r.id, rowAfter: rowAfter("tclaim", d), sortKey: "tclaim" })}
+  ${renderBelowTable("tclaim", d, rows)}`;
+}
+
+/* ------------------------------------------------------------ 選択行の詳細 */
+
+function claimById(view, id) {
+  return (view === "dclaim" ? db.deviceClaims : db.tagClaims).find(c => c.id === id) || null;
+}
+
+/** そのクレームと対になっている相手(ペア)。 */
+function partnersOf(view, id) {
+  if (view === "dclaim") return db.pairs.filter(p => p.device.id === id).map(p => p.tag);
+  return db.pairs.filter(p => p.tag.id === id).map(p => p.device);
+}
+
+/** 同じモノに対する他のクレーム(履歴)。 */
+function historyOf(view, claim) {
+  const no = claim[THING_KEY[view]];
+  if (!no) return [];
+  const thing = (view === "dclaim" ? db.devices : db.tags).find(t => t[THING_KEY[view]] === no);
+  return thing ? thing.claims.filter(c => c.id !== claim.id) : [];
+}
+
+const claimLabel = c => c.name || c.user_name || c.name_org || "（名称なし）";
+const claimLink = (view, c) =>
+  `<a href="#" data-act="sel" data-view="${view}" data-id="${esc(c.id)}">${esc(claimLabel(c))}</a>`;
+
+/** 選択した行の直後に差し込む中身。詳細、または編集中ならそのフォーム。 */
+function rowAfter(view, d) {
+  return r => {
+    if (editor && editor.view === view) {
+      return (editor.mode === "edit" && editor.id === r.id) ? renderForm(view, d) : "";
+    }
+    return selected[view] === r.id ? renderDetail(view, d, r) : "";
+  };
+}
+
+/** いま新規作成中かどうか。作成ボタンとフォームの出し分けに使う。 */
+function isCreating(view) {
+  return !!(editor && editor.view === view && editor.mode === "create");
+}
+
+/**
+ * 表の上に出すもの。
+ * 新規作成フォームは対応する行が無いので、作成ボタンの直下(表の上)に出す。
+ */
+function renderCreateForm(view, d) {
+  return isCreating(view) ? renderForm(view, d, "above") : "";
+}
+
+/**
+ * 表の下に出すもの。
+ * 絞り込みで選択行が表に出ていないとき、見失わないようにここへ出す。
+ */
+function renderBelowTable(view, d, visibleRows) {
+  if (isCreating(view)) return ""; // 表の上に出している
+
+  const id = selected[view];
+  if (!id) return `<p class="hint">行をクリックすると、その行の下に詳細が開きます。</p>`;
+  if (visibleRows.some(r => r.id === id)) return ""; // 行の直後に出ている
+
+  const claim = claimById(view, id);
+  if (!claim) return "";
+  if (editor && editor.view === view && editor.mode === "edit" && editor.id === id) return renderForm(view, d, "below");
+  return renderDetail(view, d, claim, "below");
+}
+
+/** 区切り・大小文字の違いを吸収した MACアドレスの比較キー(src/reconcile.ts と同じ規則)。 */
+const macKey = s => String(s || "").replace(/[^0-9a-fA-F]/g, "").toUpperCase();
+
+/**
+ * その子機の AWS / Azure 照合結果。
+ * 突合は子機だけが対象(タグは AWS を使わない。interface/aws-interface.md)。
+ */
+function renderCloud(thing) {
+  if (!reconcileRows.length) {
+    return `<p class="hint" style="margin:0">照合データがありません。<code>npm run reconcile</code> の出力（DEVICE_RECONCILE.csv）を読み込むと、ここに AWS / Azure の状態が出ます。</p>`;
+  }
+  const key = macKey(thing.mac_address);
+  const rec = key && reconcileRows.find(r => macKey(r.mac_address) === key);
+  if (!rec) {
+    return `<p class="hint" style="margin:0">この MACアドレス（${esc(thing.mac_address)}）は照合結果に含まれていません。</p>`;
+  }
+  const state = rec.state === "all"
+    ? "一致（AWS・Azure・台帳すべてに存在）"
+    : `<span class="state-waiting">${esc(RECONCILE_STATE_LABELS[rec.state] ?? rec.state)}</span>`;
+  const link = `<a href="#" data-goto="reconcile" data-goto-field="q"
+    data-goto-id="${esc(rec.mac_address)}" data-goto-filter="all">照合タブで見る</a>`;
+  return `<div class="fields">
+    <div class="f"><span>照合状態</span><div>${state}</div></div>
+    <div class="f"><span>AWS 名称</span><div>${dash(rec.aws_name)}</div></div>
+    <div class="f"><span>AWS DevEUI</span><div>${rec.aws_dev_eui ? `<span class="id">${esc(rec.aws_dev_eui)}</span>` : dash("")}</div></div>
+    <div class="f"><span>Azure 名称</span><div>${dash(rec.azure_name)}</div></div>
+    <div class="f"><span>Azure RSSI</span><div>${dash(rec.azure_rssi)}</div></div>
+    <div class="f"><span>Azure 最終受信</span><div>${dash(rec.azure_lastreceivetime)}</div></div>
+    <div class="f"><span></span><div>${link}</div></div>
+  </div>`;
+}
+
+function renderDetail(view, d, claim, cls) {
+  // 一覧に列として出ている項目は、行を見れば分かるので詳細では繰り返さない。
+  const fields = CLAIM_FIELDS[view].filter(f => !f.list).map(f =>
+    `<div class="f"><span>${esc(f.label)}</span><div>${fieldDisplay(f, claim, d)}</div></div>`).join("");
+
+  const no = claim[THING_KEY[view]];
+  const thing = no ? (view === "dclaim" ? db.devices : db.tags).find(t => t[THING_KEY[view]] === no) : null;
+  // 番号は一覧の列に出ているので、ここでは在庫側からしか分からない情報だけを出す。
+  const thingBlock = thing
+    ? `<div class="fields">
+        <div class="f"><span>MACアドレス</span><div><span class="id">${esc(thing.mac_address)}</span></div></div>
+        <div class="f"><span>${view === "dclaim" ? "アンテナ" : "種類"}</span><div>${dash(view === "dclaim" ? thing.antenna : thing.tag_type)}</div></div>
+        <div class="f"><span>在庫の状態</span><div>${dash(thing.status)}</div></div>
+       </div>`
+    : `<p class="hint" style="margin:0">現物はまだ割り当てられていません（現物待ち）。</p>`;
+
+  // 照合は MACアドレスが前提なので、現物が割り当たっている子機クレームのときだけ出す。
+  const cloudSection = (view === "dclaim" && thing)
+    ? `<section><h3>AWS / Azure（MACアドレスで照合）</h3>${renderCloud(thing)}</section>`
+    : "";
+
+  const partners = partnersOf(view, claim.id);
+  const other = view === "dclaim" ? "tclaim" : "dclaim";
+  const pairBlock = partners.length
+    ? `<div class="related">${partners.map(p =>
+        `<div class="row">${claimLink(other, p)} ${thingNo(p[THING_KEY[other]])} ${p.active ? "" : '<span class="muted">（終了）</span>'}</div>`).join("")}</div>`
+    : `<p class="hint" style="margin:0">ペアなし。</p>`;
+
+  const history = historyOf(view, claim);
+  const historyBlock = history.length
+    ? `<div class="related">${history.map(h =>
+        `<div class="row">${esc(h.start_date || "開始日なし")} 〜 ${esc(h.end_date || "（継続中）")}　${claimLink(view, h)}　${h.note ? esc(h.note) : ""}</div>`).join("")}</div>`
+    : `<p class="hint" style="margin:0">この${esc(THING_LABEL[view])}に対する他のクレームはありません。</p>`;
+
+  return `<div class="detail${cls ? " " + cls : ""}">
+    <div class="dhead">
+      <h2>${esc(claimLabel(claim))}</h2>
+      <span>${claimState(claim)}</span>
+      <span class="sub">${esc(claim.start_date || "開始日なし")} 〜 ${esc(claim.end_date || "（継続中）")}</span>
+      <span class="sub id">${esc(claim.id)}</span>
+    </div>
+
+    ${fields ? `<section><h3>内容</h3><div class="fields">${fields}</div></section>` : ""}
+    <section><h3>紐づく現物</h3>${thingBlock}</section>
+    ${cloudSection}
+    <section><h3>ペア（${esc(THING_LABEL[other])}クレーム）</h3>${pairBlock}</section>
+    <section><h3>同じ${esc(THING_LABEL[view])}の履歴</h3>${historyBlock}</section>
+
+    <div class="actions">
+      <button class="primary" data-act="edit">編集</button>
+      ${claim.active ? `<button class="danger" data-act="end">このクレームを終了する</button>` : ""}
+      <button class="ghost" data-act="close">閉じる</button>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------ 入力フォーム */
+
+/**
+ * 保存方法の説明は document.txt 3. に沿っている。
+ * 「変更」は既存行の終了日を確定して新しい行を足す(履歴が残る)。
+ * 「訂正」は既存行をその場で上書きする(入力ミスの修正用)。
+ */
+function renderForm(view, d, cls) {
+  const creating = editor.mode === "create";
+  const fields = CLAIM_FIELDS[view].map(f =>
+    `<div class="fld${f.wide ? " wide" : ""}">
+      <label class="${f.required ? "req" : ""}">${esc(f.label)}</label>
+      ${fieldInput(view, f, editor.draft, d)}
+    </div>`).join("");
+
+  const dateFields = (creating || editor.save === "fix") ? `
+    <div class="fld"><label>開始日</label><input type="date" data-field="start_date" value="${esc(editor.draft.start_date || "")}"></div>
+    ${creating ? "" : `<div class="fld"><label>終了日</label><input type="date" data-field="end_date" value="${esc(editor.draft.end_date || "")}"></div>`}` : "";
+
+  const modeBlock = creating ? "" : `
+    <section>
+      <h3>保存方法</h3>
+      <div class="savemode">
+        <button data-act="mode" data-mode="change" aria-pressed="${editor.save === "change"}" ${editor.canChange ? "" : "disabled"}>
+          <strong>変更として記録する</strong>
+          <span>いまの行の終了日を今日で確定し、新しい行を追加します。委譲先・用途・設置場所が実際に変わったときはこちら。</span>
+        </button>
+        <button data-act="mode" data-mode="fix" aria-pressed="${editor.save === "fix"}">
+          <strong>訂正する（上書き）</strong>
+          <span>いまの行をそのまま書き換えます。単純な入力ミスの修正はこちら。履歴は増えません。</span>
+        </button>
+      </div>
+      ${editor.canChange ? "" : `<p class="hint" style="margin:0">終了済みのクレームは履歴なので、訂正のみできます。</p>`}
+    </section>`;
+
+  return `<div class="detail${cls ? " " + cls : ""}">
+    <div class="dhead">
+      <h2>${creating ? `${esc(THING_LABEL[view])}クレームの新規作成` : "クレームの編集"}</h2>
+      ${creating ? "" : `<span class="sub id">${esc(editor.id)}</span>`}
+    </div>
+
+    <section><h3>内容</h3><div class="form">${fields}${dateFields}</div></section>
+    ${modeBlock}
+    ${editor.error ? `<p class="formerr">${esc(editor.error)}</p>` : ""}
+
+    <div class="actions">
+      <button class="primary" data-act="save">${creating ? "作成する" : "保存する"}</button>
+      <button class="ghost" data-act="cancel">キャンセル</button>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------ 編集の操作 */
+
+function startCreate(view) {
+  const draft = {};
+  for (const f of CLAIM_FIELDS[view]) draft[f.key] = "";
+  draft.start_date = today();
+  editor = { view, mode: "create", id: null, draft, save: "change", canChange: true, originalThingNo: "" };
+  selected[view] = null;
+  render();
+}
+
+function startEdit(view, id) {
+  const claim = claimById(view, id);
+  if (!claim) return;
+  const draft = {};
+  for (const f of CLAIM_FIELDS[view]) draft[f.key] = claim[f.key] ?? "";
+  draft.start_date = claim.start_date || "";
+  draft.end_date = claim.end_date || "";
+  // 終了済みの行は履歴なので、新しい行を足す「変更」はできない。訂正だけ。
+  const canChange = claim.active;
+  // 編集対象と選択行は必ず一致させる。ずれるとフォームの出し先が決まらない。
+  selected[view] = id;
+  editor = {
+    view, mode: "edit", id, draft,
+    save: canChange ? "change" : "fix",
+    canChange,
+    originalThingNo: claim[THING_KEY[view]] || "",
+  };
+  render();
+}
+
+function saveEditor() {
+  const view = editor.view;
+  const rows = raw[CLAIM_TABLE[view]];
+  const draft = editor.draft;
+
+  const required = CLAIM_FIELDS[view].filter(f => f.required && !draft[f.key]);
+  if (required.length) {
+    editor.error = `${required.map(f => f.label).join("・")} は必須です。`;
+    render();
+    return;
+  }
+
+  const blank = () => Object.fromEntries(TABLE_COLUMNS[CLAIM_TABLE[view]].map(c => [c, ""]));
+  const fieldValues = () => Object.fromEntries(CLAIM_FIELDS[view].map(f => [f.key, draft[f.key] ?? ""]));
+
+  if (editor.mode === "create") {
+    const id = uuid();
+    rows.push({ ...blank(), ...fieldValues(), id, start_date: draft.start_date || today(), end_date: "" });
+    selected[view] = id;
+    scrollToSelected = true; // 末尾に増えるので、画面外だと気づけない
+
+  } else if (editor.save === "fix") {
+    // 訂正: その行をそのまま書き換える。履歴は増やさない。
+    const row = rows.find(r => r.id === editor.id);
+    Object.assign(row, fieldValues(), { start_date: draft.start_date || "", end_date: draft.end_date || "" });
+    selected[view] = editor.id;
+
+  } else {
+    // 変更: 既存行を今日で終了し、その"直後"に新しい行を差し込む(document.txt 3.)。
+    // 末尾に足すと編集した場所から離れた行に詳細が開いてしまい、
+    // 「1件を編集した」ようには見えなくなる。
+    const idx = rows.findIndex(r => r.id === editor.id);
+    const row = rows[idx];
+
+    // 中身が何も変わっていないなら、履歴を増やす意味も、いまの行を終了させる理由も無い。
+    const values = fieldValues();
+    if (Object.keys(values).every(k => (row[k] ?? "") === values[k])) {
+      selected[view] = editor.id;
+      editor = null;
+      notice = "内容が変わっていないため、新しい行は作成していません。";
+      refresh();
+      return;
+    }
+
+    const d = today();
+    row.end_date = d;
+    const id = uuid();
+    rows.splice(idx + 1, 0, { ...row, ...fieldValues(), id, start_date: d, end_date: "" });
+    // ペアは「要求」同士の結び付きなので、続いている要求である新しい行へ引き継ぐ。
+    for (const p of raw.CLAIM_PAIR) {
+      if (view === "dclaim" && p.device_claim_id === editor.id) p.device_claim_id = id;
+      if (view === "tclaim" && p.tag_claim_id === editor.id) p.tag_claim_id = id;
+    }
+    selected[view] = id;
+  }
+
+  editor = null;
+  refresh();
+}
+
+function endClaim(view, id) {
+  const claim = claimById(view, id);
+  if (!claim) return;
+  if (!confirm(`「${claimLabel(claim)}」を今日（${today()}）で終了しますか？\n行は消さず、終了日を入れて履歴として残します。`)) return;
+  const row = raw[CLAIM_TABLE[view]].find(r => r.id === id);
+  row.end_date = today();
+  refresh();
+}
+
+function handleAction(btn) {
+  const act = btn.dataset.act;
+
+  // --- 団体・渡し先(共有マスタ)の追加 ---
+  if (act === "new-master") { masterEditor = { kind: btn.dataset.kind, values: {}, error: "" }; return render(); }
+  if (act === "cancel-master") { masterEditor = null; return render(); }
+  if (act === "save-master") {
+    const r = addMaster(masterEditor.kind, masterEditor.values);
+    if (r.error) { masterEditor.error = r.error; return render(); }
+    notice = `${MASTER[masterEditor.kind].label}「${masterEditor.values.name.trim()}」を追加しました。`;
+    masterEditor = null;
+    return refresh();
+  }
+  // --- クレーム入力中に、その場でマスタを足す ---
+  if (act === "add-master") { editor.addMaster = btn.dataset.kind; editor.addValues = {}; editor.addError = ""; return render(); }
+  if (act === "add-master-cancel") { editor.addMaster = null; editor.addError = ""; return render(); }
+  if (act === "add-master-save") {
+    const kind = btn.dataset.kind;
+    const r = addMaster(kind, editor.addValues || {});
+    if (r.error) { editor.addError = r.error; return render(); }
+    // 足したものをそのまま選んだ状態にする
+    editor.draft[kind === "org" ? "org_id" : "delegatee_id"] = r.id;
+    editor.addMaster = null;
+    editor.addValues = {};
+    editor.addError = "";
+    return refresh();
+  }
+
+  if (act === "new") return startCreate(current);
+  if (act === "edit") return startEdit(current, selected[current]);
+  if (act === "cancel") { editor = null; return render(); }
+  if (act === "save") return saveEditor();
+  if (act === "mode") { editor.save = btn.dataset.mode; editor.error = ""; return render(); }
+  if (act === "end") return endClaim(current, selected[current]);
+  if (act === "close") { selected[current] = null; return render(); }
+  if (act === "sel") {
+    editor = null;
+    current = btn.dataset.view;
+    selected[current] = btn.dataset.id;
+    return render();
+  }
+}
+
+/* ------------------------------------------------------------ 読み取り専用ビュー */
+
+const PAIR_FILTERS = [
+  { key: "all", label: "すべて", test: null },
+  { key: "active", label: "両方有効", test: p => p.device.active && p.tag.active },
+];
+
+function renderPairs(d) {
+  const rows = applyFilters("pair", d.pairs,
+    p => [p.device.org, p.device.name, p.device.name_org, p.tag.name, p.tag.user_name].join(" "),
+    PAIR_FILTERS);
+  const side = (name, no) => esc(name || "（名称なし）") + " " + thingNo(no);
+  return `${toolbar("pair", PAIR_FILTERS, rows.length, d.pairs.length)}
+  ${table([
+    { label: "団体", get: p => dash(p.device.org) },
+    { label: "対象", get: p => dash(p.tag.user_name || p.device.name_org) },
+    { label: "子機クレーム ↔ タグクレーム", cls: "wrap",
+      get: p => side(p.device.name, p.device.device_no) + '<span class="pair">↔</span>' + side(p.tag.name, p.tag.tag_no) },
+    { label: "状態", get: p => (p.device.active && p.tag.active) ? "有効" : '<span class="muted">終了を含む</span>' },
+  ], rows, { sortKey: "pair" })}`;
+}
+
+/** クレーム件数はリンクにして、その団体/渡し先だけに絞ったクレームビューへ飛べるようにする。 */
+const gotoClaims = (view, field, id, n) => n
+  ? `<a href="#" data-goto="${view}" data-goto-field="${field}" data-goto-id="${esc(id)}">${n} 件</a>`
+  : '<span class="muted">0 件</span>';
+
+/** マスタのタブに出す追加フォーム。開いていなければ何も出さない。 */
+function masterForm(kind) {
+  if (!masterEditor || masterEditor.kind !== kind) return "";
+  const spec = MASTER[kind];
+  return `<div class="masterform">
+    ${spec.fields.map(f => `<div class="fld">
+      <label class="${f.required ? "req" : ""}">${esc(f.label)}</label>
+      <input type="text" data-mfield="${f.key}" value="${esc(masterEditor.values[f.key] || "")}">
+    </div>`).join("")}
+    <button class="primary" data-act="save-master">追加する</button>
+    <button class="ghost" data-act="cancel-master">キャンセル</button>
+    ${masterEditor.error ? `<p class="formerr wide">${esc(masterEditor.error)}</p>` : ""}
+  </div>`;
+}
+
+function renderOrgs(d) {
+  return `<div class="newbtn"><button class="primary" data-act="new-master" data-kind="org">＋ 団体を追加</button></div>
+  ${masterForm("org")}
+  ${table([
+    { label: "id", cls: "num", get: o => `<span class="id">${esc(o.id)}</span>` },
+    { label: "団体名", get: o => esc(o.name) },
+    { label: "有効な子機クレーム", cls: "num", get: o => gotoClaims("dclaim", "org", o.id, o.deviceClaims.length) },
+    { label: "有効なタグクレーム", cls: "num", get: o => gotoClaims("tclaim", "org", o.id, o.tagClaims.length) },
+    { label: "現物待ち", cls: "num", get: o => {
+        const n = o.deviceClaims.filter(c => !c.hasThing).length + o.tagClaims.filter(c => !c.hasThing).length;
+        return n ? `<span class="state-waiting">${n} 件</span>` : '<span class="muted">—</span>';
+      } },
+  ], d.orgs, { sortKey: "org" })}`;
+}
+
+function renderDelegatees(d) {
+  return `<div class="newbtn"><button class="primary" data-act="new-master" data-kind="del">＋ 渡し先を追加</button></div>
+  ${masterForm("del")}
+  ${table([
+    { label: "id", cls: "num", get: r => `<span class="id">${esc(r.id)}</span>` },
+    { label: "名前", get: r => esc(r.name) },
+    { label: "種別", get: r => dash(r.type) },
+    { label: "有効な子機クレーム", cls: "num", get: r => gotoClaims("dclaim", "delegatee", r.id, r.deviceClaims.length) },
+    { label: "現物待ち", cls: "num", get: r => {
+        const n = r.deviceClaims.filter(c => !c.hasThing).length;
+        return n ? `<span class="state-waiting">${n} 件</span>` : '<span class="muted">—</span>';
+      } },
+  ], d.delegatees, { sortKey: "del" })}`;
+}
+
+/**
+ * AWS(IoT Wireless) / Azure(SQL Receiver) / 台帳(brand-new DEVICE) の突合結果。
+ * npm run reconcile の出力を読む。対象は子機のみ(タグは AWS を使わないため対象外)。
+ */
+let reconcileRows = [];
+
+const RECONCILE_STATE_LABELS = {
+  all: "一致",
+  aws_azure: "AWS+Azure（台帳未反映）",
+  aws_ledger: "AWS+台帳（Azure未登録）",
+  azure_ledger: "Azure+台帳（AWS未登録）",
+  aws_only: "AWSのみ",
+  azure_only: "Azureのみ",
+  ledger_only: "台帳のみ（クラウド未登録）",
+};
+const RECONCILE_FILTERS = [
+  { key: "all", label: "すべて", test: null },
+  { key: "mismatch", label: "不一致のみ", test: r => r.state !== "all" },
+  ...Object.entries(RECONCILE_STATE_LABELS).map(([key, label]) => ({ key, label, test: r => r.state === key })),
+];
+
+function renderReconcile() {
+  const rows = applyFilters("reconcile", reconcileRows,
+    r => [r.mac_address, r.ledger_device_no, r.aws_name, r.azure_name].join(" "),
+    RECONCILE_FILTERS);
+  return `${toolbar("reconcile", RECONCILE_FILTERS, rows.length, reconcileRows.length)}
+  ${table([
+    { label: "状態", get: r => r.state === "all" ? "一致" : `<span class="state-waiting">${esc(RECONCILE_STATE_LABELS[r.state] ?? r.state)}</span>` },
+    { label: "MACアドレス", get: r => `<span class="id">${esc(r.mac_address)}</span>` },
+    { label: "台帳:子機番号", get: r => dash(r.ledger_device_no) },
+    { label: "台帳:状態", get: r => dash(r.ledger_status) },
+    { label: "AWS:名称", get: r => dash(r.aws_name) },
+    { label: "Azure:名称", get: r => dash(r.azure_name) },
+    { label: "Azure:RSSI", cls: "num", get: r => dash(r.azure_rssi) },
+    { label: "Azure:最終受信", get: r => dash(r.azure_lastreceivetime) },
+    { label: "備考", cls: "wrap", get: r => dash(r.ledger_note) },
+  ], rows, { sortKey: "reconcile" })}`;
+}
+
+/* ------------------------------------------------------------ 操作説明 */
+
+function renderHelp() {
+  return `<div class="help">
+
+  <section>
+    <h2>このアプリについて</h2>
+    <p>子機・タグ<strong>そのもの</strong>（在庫）と、「誰が・何のために必要としているか」という<strong>クレーム</strong>を
+    分けて管理します。子機やタグを故障で交換しても、差し替えるのはモノだけで、
+    団体や用途を入れ直す必要はありません。</p>
+    <p class="warn">このページはデザインのモックです。編集した内容は画面の上だけに残り、ファイルには保存されません。
+    再読み込みすると、読み込んだときの状態に戻ります。</p>
+  </section>
+
+  <section>
+    <h2>データを読み込む</h2>
+    <dl>
+      <dt>フォルダを選ぶ</dt>
+      <dd><code>output</code> フォルダを指定すると、中の CSV をまとめて取り込みます。
+        フォルダを画面にドラッグ＆ドロップしても同じです。</dd>
+      <dt>CSVを選ぶ</dt>
+      <dd>ファイルを個別に選びます。</dd>
+      <dt>./output を読む</dt>
+      <dd>ローカルサーバ経由で開いているときだけ使えます。</dd>
+      <dt>サンプルに戻す</dt>
+      <dd>最初の見本データに戻します。編集した内容は消えます。</dd>
+    </dl>
+    <p>ファイル名が同じでも中身の列が違うものは読み飛ばし、その理由を画面の上に出します。</p>
+  </section>
+
+  <section>
+    <h2>タブの見かた</h2>
+    <dl>
+      <dt>子機クレーム／タグクレーム</dt>
+      <dd>作業の中心。既定では<strong>有効なものだけ</strong>が並びます。</dd>
+      <dt>ペア</dt>
+      <dd>「同じ人・同じ場所に子機とタグを両方届ける」関係。モノ同士ではなく、要求同士の結び付きです。</dd>
+      <dt>子機在庫／タグ在庫</dt>
+      <dd>手元にある現物の一覧。見るだけで、ここからは編集しません。</dd>
+      <dt>団体／渡し先</dt>
+      <dd>複数のクレームから共有されるマスタ。ここから追加できます。</dd>
+      <dt>AWS/Azure照合</dt>
+      <dd>MACアドレスで突き合わせた結果。見るだけです。</dd>
+    </dl>
+  </section>
+
+  <section>
+    <h2>クレームを見る</h2>
+    <p>行をクリックすると、<strong>その行のすぐ下</strong>に詳細が開きます。もう一度押すと閉じます。
+    詳細には、一覧の列に出ていない情報だけが並びます。</p>
+    <ul>
+      <li><strong>紐づく現物</strong> … MACアドレスなど、在庫側にしかない情報</li>
+      <li><strong>AWS / Azure</strong> … その子機がクラウド側に登録されているか（子機クレームのみ）</li>
+      <li><strong>ペア</strong> … 対になっているクレーム（押すと移動します）</li>
+      <li><strong>履歴</strong> … 同じ子機・タグに対する過去のクレーム（押すと移動します）</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>クレームを作る</h2>
+    <p>「＋ クレームを作成」を押すと、表の上に入力欄が開きます。</p>
+    <ul>
+      <li>団体は必須です。</li>
+      <li>子機番号・タグ番号は、<strong>まだ割り当てのない在庫だけ</strong>が選べます。</li>
+      <li>現物がまだ届いていないときは、<strong>番号を空のまま</strong>にします（「現物待ち」として扱われます）。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>クレームを直す — 「変更」と「訂正」</h2>
+    <p>編集するときに、どちらの直し方かを選びます。ここが一番大事なところです。</p>
+    <dl>
+      <dt>変更として記録する（既定）</dt>
+      <dd>委譲先・用途・設置場所などが<strong>実際に変わった</strong>とき。
+        いまの行の終了日を今日で確定し、新しい内容の行をそのすぐ下に追加します。前の状態は履歴として残ります。</dd>
+      <dt>訂正する（上書き）</dt>
+      <dd><strong>入力ミスを直すだけ</strong>のとき。いまの行をそのまま書き換えます。履歴は増えません。
+        開始日・終了日も、このときだけ直せます。</dd>
+    </dl>
+    <ul>
+      <li>何も変えずに保存したときは、意味のない履歴を作らないよう、行を追加しません。</li>
+      <li>終了したクレームは履歴なので、訂正だけできます。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>クレームを終わらせる</h2>
+    <p>詳細の「このクレームを終了する」を押すと、今日の日付で終了します。
+    行は消えず、終了日が入るだけです。終了すると、その子機・タグは在庫の未割当に戻ります。</p>
+  </section>
+
+  <section>
+    <h2>団体・渡し先を足す</h2>
+    <ul>
+      <li>団体タブ・渡し先タブの「＋ 追加」から足せます。</li>
+      <li>クレームの入力中でも、プルダウンの下の「＋ 追加」から足せます。
+        入力途中の内容は消えず、足したものがそのまま選ばれます。</li>
+      <li>同じ名前のものがすでにあるときは追加できません。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>探す・並べ替える</h2>
+    <ul>
+      <li><strong>検索欄</strong> … その一覧の中を文字で絞り込みます。</li>
+      <li><strong>絞り込み</strong> … 有効／現物待ち／終了（履歴）などで切り替えます。</li>
+      <li><strong>列見出しを押す</strong> … 昇順 → 降順 → 解除 の順に並べ替えます。空欄はいつでも最後に集まります。</li>
+      <li><strong>団体・渡し先タブの件数を押す</strong> … その団体・渡し先だけに絞ったクレーム一覧へ移動します。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>画面の設定</h2>
+    <p>「縦に並べる／横に並べる」でタブの並びを切り替えられます。選んだ並びは、次に開いたときも残ります。</p>
+  </section>
+
+  </div>`;
+}
+
+const VIEWS = [
+  { key: "dclaim", label: "子機クレーム", count: d => d.deviceClaims.length, render: renderDeviceClaims },
+  { key: "tclaim", label: "タグクレーム", count: d => d.tagClaims.length, render: renderTagClaims },
+  { key: "pair", label: "ペア", count: d => d.pairs.length, render: renderPairs },
+  { key: "device", label: "子機在庫", count: d => d.devices.length, render: renderDevices },
+  { key: "tag", label: "タグ在庫", count: d => d.tags.length, render: renderTags },
+  { key: "org", label: "団体", count: d => d.orgs.length, render: renderOrgs },
+  { key: "del", label: "渡し先", count: d => d.delegatees.length, render: renderDelegatees },
+  { key: "reconcile", label: "AWS/Azure照合", count: () => reconcileRows.length, render: renderReconcile },
+  { key: "help", label: "操作説明", count: () => null, render: renderHelp },
+];
+
+/* ------------------------------------------------------------ シェル */
+
+let current = "dclaim";
+
+function renderNav() {
+  document.getElementById("nav").innerHTML = VIEWS.map(v => {
+    const n = v.count(db);
+    return `<button data-v="${v.key}" aria-current="${current === v.key}">${esc(v.label)}`
+      + (n === null ? "" : `<span class="n">${n}</span>`) + `</button>`;
+  }).join("");
+}
+
+function render() {
+  renderNav();
+  const body = VIEWS.find(v => v.key === current).render(db);
+  document.getElementById("view").innerHTML =
+    (notice ? `<p class="notice">${esc(notice)}</p>` : "") + body;
+  notice = ""; // 一度出したら消す
+
+  if (scrollToSelected) {
+    scrollToSelected = false;
+    const id = selected[current];
+    const row = id && document.querySelector(`tr[data-row-id="${id}"]`);
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+}
+
+function setSource(text, ok) {
+  document.getElementById("sourceText").textContent = (ok ? "" : "⚠ ") + text;
+}
+
+function load(tables, label, ok) {
+  raw = tables;
+  db = build(raw);
+  selected.dclaim = selected.tclaim = null;
+  editor = null;
+  setSource(label, ok !== false);
+  render();
+}
+
+function loadSample(note) {
+  const embedded = JSON.parse(document.getElementById("sample").textContent);
+  const parsed = {};
+  for (const t of TABLES) parsed[t] = parseCsv(embedded[t]);
+  reconcileRows = parseCsv(embedded.RECONCILE);
+  load(parsed, note || "埋め込みサンプルを表示中（移行スクリプトの出力を元に作成）");
+}
+
+/** ./reconcile-output/DEVICE_RECONCILE.csv が読めれば差し替える。読めなくても無視する(サンプルのまま)。 */
+async function tryLoadReconcileFromDisk() {
+  try {
+    const res = await fetch("./reconcile-output/DEVICE_RECONCILE.csv", { cache: "no-store" });
+    if (!res.ok) return;
+    const rows = parseCsv(await res.text());
+    if (rows.length) reconcileRows = rows;
+  } catch {
+    // file:// や未生成の場合はサンプルのまま表示する。
+  }
+}
+
+async function loadFromOutput(quiet) {
+  try {
+    const entries = await Promise.all(TABLES.map(async t => {
+      const res = await fetch(`./output/${t}.csv`, { cache: "no-store" });
+      if (!res.ok) throw new Error(t);
+      return [t, parseCsv(await res.text())];
+    }));
+    const tables = Object.fromEntries(entries);
+    if (TABLES.every(t => tables[t].length === 0)) {
+      if (!quiet) setSource("./output は空でした。先に npm run migrate を実行してください。", false);
+      return false;
+    }
+    await tryLoadReconcileFromDisk();
+    load(tables, "./output の CSV を表示中");
+    return true;
+  } catch (e) {
+    if (!quiet) setSource("./output を読めませんでした。file:// で開くとブラウザが読み込みを拒否します。「CSVを選ぶ」か、ローカルサーバ経由で開いてください。", false);
+    return false;
+  }
+}
+
+/* ---- 操作 ---- */
+
+const view = document.getElementById("view");
+
+// 変換中(IMEの未確定文字列がある間)に画面を再描画すると input 要素ごと
+// 作り直され、変換中の文字が壊れる(先頭の子音が全角のまま確定するなど)。
+// compositionstart〜compositionend の間は再描画せず、確定後に反映する。
+view.addEventListener("compositionstart", e => {
+  if (e.target.dataset.q) e.target.dataset.composing = "1";
+});
+view.addEventListener("compositionend", e => {
+  const key = e.target.dataset.q;
+  if (!key) return;
+  delete e.target.dataset.composing;
+  stateFor(key).q = e.target.value;
+  render();
+  focusSearch(key, e.target.selectionStart);
+});
+view.addEventListener("input", e => {
+  // 入力フォームは再描画しない(打つたびに作り直すとIMEも入力位置も壊れるため)。
+  const mfield = e.target.dataset.mfield;
+  if (mfield) {
+    if (masterEditor) masterEditor.values[mfield] = e.target.value;
+    else if (editor) (editor.addValues = editor.addValues || {})[mfield] = e.target.value;
+    return;
+  }
+  const field = e.target.dataset.field;
+  if (field) { if (editor) editor.draft[field] = e.target.value; return; }
+
+  const key = e.target.dataset.q;
+  if (!key || e.target.dataset.composing) return;
+  stateFor(key).q = e.target.value;
+  const pos = e.target.selectionStart;
+  render();
+  focusSearch(key, pos);
+});
+function focusSearch(key, pos) {
+  const next = document.querySelector(`[data-q="${key}"]`);
+  if (next) { next.focus(); next.setSelectionRange(pos, pos); }
+}
+
+view.addEventListener("click", e => {
+  // 列見出し: 昇順 → 降順 → 解除(読み込んだ順)の順に切り替える。
+  const th = e.target.closest("th[data-sort]");
+  if (th) {
+    const s = stateFor(th.dataset.sort);
+    const col = Number(th.dataset.col);
+    if (s.sort !== col) { s.sort = col; s.dir = "asc"; }
+    else if (s.dir === "asc") { s.dir = "desc"; }
+    else { s.sort = null; s.dir = "asc"; }
+    render();
+    return;
+  }
+
+  const actBtn = e.target.closest("[data-act]");
+  if (actBtn && !actBtn.disabled) {
+    e.preventDefault();
+    handleAction(actBtn);
+    return;
+  }
+  const filterBtn = e.target.closest("[data-f]");
+  if (filterBtn) {
+    stateFor(filterBtn.dataset.f).f = filterBtn.dataset.fk;
+    render();
+    return;
+  }
+  // 「団体」「渡し先」タブのクレーム件数リンク: その1件だけに絞ってクレームビューへ飛ぶ。
+  const link = e.target.closest("[data-goto]");
+  if (link) {
+    e.preventDefault();
+    const key = link.dataset.goto;
+    stateFor(key)[link.dataset.gotoField] = link.dataset.gotoId;
+    // 飛んだ先の絞り込みが残っていると目的の行が隠れることがあるので、指定があれば戻す。
+    if (link.dataset.gotoFilter) stateFor(key).f = link.dataset.gotoFilter;
+    editor = null;
+    current = key;
+    render();
+    return;
+  }
+  // クレーム一覧の行: 選ぶと下に詳細が出る。もう一度押すと閉じる。
+  const tr = e.target.closest("tr[data-row-id]");
+  if (tr && selected.hasOwnProperty(current)) {
+    const id = tr.dataset.rowId;
+    editor = null;
+    selected[current] = selected[current] === id ? null : id;
+    render();
+  }
+});
+
+view.addEventListener("change", e => {
+  const mfield = e.target.dataset.mfield;
+  if (mfield) {
+    if (masterEditor) masterEditor.values[mfield] = e.target.value;
+    else if (editor) (editor.addValues = editor.addValues || {})[mfield] = e.target.value;
+    return;
+  }
+  const field = e.target.dataset.field;
+  if (field) { if (editor) editor.draft[field] = e.target.value; return; }
+  // プルダウンは data-org="dclaim" / data-delegatee="tclaim" のように
+  // 「絞り込みたいフィールド名」を属性名、対象ビューのキーを属性値として持つ。
+  for (const f of ["org", "delegatee"]) {
+    const key = e.target.dataset[f];
+    if (key) { stateFor(key)[f] = e.target.value; render(); return; }
+  }
+});
+
+document.getElementById("nav").addEventListener("click", e => {
+  const btn = e.target.closest("[data-v]");
+  if (!btn) return;
+  editor = null;
+  masterEditor = null;
+  current = btn.dataset.v;
+  render();
+});
+
+document.getElementById("pickDir").onclick = () => document.getElementById("dir").click();
+document.getElementById("pick").onclick = () => document.getElementById("file").click();
+document.getElementById("reload").onclick = () => loadFromOutput(false);
+document.getElementById("useSample").onclick = () => loadSample();
+
+/* ---- タブの並び(横/縦)の切り替え。選択は次回開いたときも覚えている。 ---- */
+const page = document.getElementById("page");
+const layoutBtn = document.getElementById("layout");
+function applyLayout(vertical) {
+  page.classList.toggle("vertical", vertical);
+  layoutBtn.textContent = vertical ? "横に並べる" : "縦に並べる";
+  try { localStorage.setItem("viewerLayout", vertical ? "vertical" : "horizontal"); } catch {}
+}
+let savedLayout = "";
+try { savedLayout = localStorage.getItem("viewerLayout") || ""; } catch {}
+applyLayout(savedLayout === "vertical");
+layoutBtn.onclick = () => applyLayout(!page.classList.contains("vertical"));
+
+/** File のリストを { file, path } に揃える。フォルダ選択時は path に相対パスが入る。 */
+const toEntries = fileList =>
+  [...fileList].map(f => ({ file: f, path: f.webkitRelativePath || f.name }));
+
+/**
+ * ドロップされたものを、フォルダなら中身まで辿って集める。
+ * webkitGetAsEntry() は drop イベントの間しか使えないので、最初に同期で取り出しておく。
+ */
+async function entriesFromDrop(dataTransfer) {
+  const roots = [...(dataTransfer.items || [])]
+    .map(i => (i.webkitGetAsEntry ? i.webkitGetAsEntry() : null))
+    .filter(Boolean);
+  if (!roots.length) return toEntries(dataTransfer.files);
+
+  const out = [];
+  const walk = async entry => {
+    if (entry.isFile) {
+      const file = await new Promise((res, rej) => entry.file(res, rej));
+      out.push({ file, path: entry.fullPath.replace(/^\//, "") });
+      return;
+    }
+    const reader = entry.createReader();
+    // readEntries は一度に最大100件しか返さないので、空になるまで読む。
+    for (;;) {
+      const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+      if (!batch.length) break;
+      for (const e of batch) await walk(e);
+    }
+  };
+  for (const r of roots) await walk(r);
+  return out;
+}
+
+/**
+ * CSV をまとめて取り込む。ファイル名でテーブルを決めたうえで、
+ * ヘッダーが合っているかも確かめる(ディレクトリごと選ぶと legacy や
+ * brand-new の同名ファイルも混ざるため)。
+ */
+async function loadFiles(entries) {
+  const csvs = entries.filter(e => /\.csv$/i.test(e.file.name));
+  if (!csvs.length) {
+    setSource("CSVが見つかりませんでした。", false);
+    return;
+  }
+
+  const parsed = {};
+  const skipped = [];
+  let reconcileFound = false;
+
+  for (const { file, path } of csvs) {
+    const name = file.name.replace(/\.csv$/i, "").toUpperCase();
+    const expected = TABLE_COLUMNS[name];
+    if (!expected || (!TABLES.includes(name) && name !== "DEVICE_RECONCILE")) {
+      skipped.push(`${path}（対象外）`);
+      continue;
+    }
+    const { header, rows } = parseCsvTable(await file.text());
+    if (!expected.every(c => header.includes(c))) {
+      skipped.push(`${path}（列が違う）`);
+      continue;
+    }
+    if (name === "DEVICE_RECONCILE") {
+      if (reconcileFound && reconcileRows.length >= rows.length) { skipped.push(`${path}（行数の多い方を採用）`); continue; }
+      reconcileRows = rows;
+      reconcileFound = true;
+      continue;
+    }
+    // 同名ファイルが複数あったら、行数の多い方を採る
+    // (brand-new はヘッダーだけの見本なので、実データ側が残る)。
+    if (parsed[name] && parsed[name].length >= rows.length) { skipped.push(`${path}（行数の多い方を採用）`); continue; }
+    parsed[name] = rows;
+  }
+
+  const missing = TABLES.filter(t => !parsed[t]);
+  for (const t of missing) parsed[t] = [];
+
+  const got = TABLES.length - missing.length;
+  const where = csvs[0].path.includes("/") ? csvs[0].path.split("/")[0] : null;
+  let label = `${where ? `${where} から ` : ""}${got} 件のCSVを取り込みました`;
+  if (reconcileFound) label += "（照合結果つき）";
+  if (missing.length) label += `（不足: ${missing.join(", ")}）`;
+
+  if (skipped.length) {
+    notice = `読み飛ばしたファイル: ${skipped.slice(0, 6).join(" / ")}`
+      + (skipped.length > 6 ? ` ほか${skipped.length - 6}件` : "");
+  }
+  load(parsed, label, missing.length === 0);
+}
+
+document.getElementById("file").onchange = e => loadFiles(toEntries(e.target.files));
+document.getElementById("dir").onchange = e => loadFiles(toEntries(e.target.files));
+
+const source = document.getElementById("source");
+document.addEventListener("dragover", e => { e.preventDefault(); source.classList.add("drag"); });
+document.addEventListener("dragleave", e => { if (e.relatedTarget === null) source.classList.remove("drag"); });
+document.addEventListener("drop", async e => {
+  e.preventDefault(); source.classList.remove("drag");
+  const entries = await entriesFromDrop(e.dataTransfer);
+  if (entries.length) loadFiles(entries);
+});
+
+/* ---- 起動: ./output が読めればそれを、無ければ埋め込みサンプルを ---- */
+loadSample();
+loadFromOutput(true);
+</script>
+</body>
+</html>
